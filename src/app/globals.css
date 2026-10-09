@@ -1,26 +1,45 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Core Colors */
+  --background: #F4F7F7;
+  --foreground: #0f172a;
+  
+  /* Sidebar Colors (Dark Teal Theme) */
+  --sidebar-bg: #0C2322;
+  --sidebar-active: #153938;
+  --sidebar-hover: #113130;
+  --sidebar-text: #879C9B;
+  --sidebar-text-active: #FFFFFF;
+  
+  /* Brand/Accent Colors */
+  --brand-primary: #17A392;
+  --brand-dark: #125F5C;
+  --brand-light: #8DCAC1;
+  
+  /* Status Colors */
+  --status-danger: #D94432;
+  --status-warning: #E89A3C;
+  --status-success: #17A392;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-sidebar: var(--sidebar-bg);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-sidebar-text: var(--sidebar-text);
+  --color-sidebar-text-active: var(--sidebar-text-active);
+  --color-brand: var(--brand-primary);
+  --color-brand-dark: var(--brand-dark);
+  --color-brand-light: var(--brand-light);
+  --color-danger: var(--status-danger);
+  --color-warning: var(--status-warning);
+  --color-success: var(--status-success);
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }
