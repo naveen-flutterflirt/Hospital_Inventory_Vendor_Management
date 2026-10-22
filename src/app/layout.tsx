@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import AppLayout from "@/components/layout/AppLayout";
+import { AuthProvider } from "@/context/AuthContext";
+import { ToastProvider } from "@/context/ToastContext";
+import { StoreProvider } from "@/context/StoreContext";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -18,9 +21,15 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.className} bg-[#F4F7F9] text-slate-900 antialiased h-screen w-screen overflow-hidden`}>
-        <AppLayout>
-          {children}
-        </AppLayout>
+        <AuthProvider>
+          <ToastProvider>
+            <StoreProvider>
+              <AppLayout>
+                {children}
+              </AppLayout>
+            </StoreProvider>
+          </ToastProvider>
+        </AuthProvider>
       </body>
     </html>
   );

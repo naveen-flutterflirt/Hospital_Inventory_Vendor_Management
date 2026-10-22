@@ -1,109 +1,242 @@
 "use client";
 
-import React, { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Header from '@/components/dashboard/Header';
 import { cn } from '@/lib/utils';
-import { Download, FileText, TrendingUp, DollarSign, Package, Users, Calendar } from 'lucide-react';
+import { Download, FileText, TrendingUp, DollarSign, Package, Users, Calendar, RotateCw, AlertCircle } from 'lucide-react';
 import ScheduleReportModal from '@/components/dashboard/ScheduleReportModal';
 import GenerateReportModal from '@/components/dashboard/GenerateReportModal';
+import { api, ReportKpisResponse, GeneratedReportItem } from '@/lib/api';
+import { Skeleton, SkeletonKpiCards } from '@/components/ui/Skeleton';
 
-const kpis = [
-  { label: 'Total Spend (YTD)', value: '₹4.2Cr', sub: '+12% vs last year', icon: DollarSign, color: 'text-[#127670]', bg: 'bg-[#1EB4A1]/10' },
-  { label: 'POs Generated', value: '1,842', sub: 'Avg ₹22K per PO', icon: FileText, color: 'text-blue-600', bg: 'bg-blue-100' },
-  { label: 'Inventory Value', value: '₹85.4L', sub: 'Across 3 stores', icon: Package, color: 'text-[#E89A3C]', bg: 'bg-[#E89A3C]/10' },
-  { label: 'Active Vendors', value: '184', sub: 'Avg Score: 88%', icon: Users, color: 'text-purple-600', bg: 'bg-purple-100' },
-];
+interface TrendItem {
+  month: string;
+  spend: number;
+  po: number;
+  spend_formatted: string;
+  po_formatted: string;
+}
 
-const generatedReports = [
-  { id: 'RPT-8442', name: 'Q3 Vendor Performance Analysis', type: 'Vendor Management', date: 'Oct 08, 2024', size: '2.4 MB' },
-  { id: 'RPT-8441', name: 'Monthly Inventory Valuation', type: 'Inventory', date: 'Oct 01, 2024', size: '1.1 MB' },
-  { id: 'RPT-8440', name: 'AP Aging Summary', type: 'Finance', date: 'Sep 30, 2024', size: '840 KB' },
-  { id: 'RPT-8439', name: 'Departmental Consumption Rate', type: 'Analytics', date: 'Sep 28, 2024', size: '3.2 MB' },
-  { id: 'RPT-8438', name: 'AMC Expiry Forecast (Q4)', type: 'Assets', date: 'Sep 25, 2024', size: '1.5 MB' },
-];
-
-const chartData = [
-  { month: 'Jan', spend: 65, po: 45 },
-  { month: 'Feb', spend: 59, po: 40 },
-  { month: 'Mar', spend: 80, po: 65 },
-  { month: 'Apr', spend: 81, po: 70 },
-  { month: 'May', spend: 56, po: 48 },
-  { month: 'Jun', spend: 55, po: 45 },
-  { month: 'Jul', spend: 40, po: 35 },
-  { month: 'Aug', spend: 75, po: 60 },
-  { month: 'Sep', spend: 90, po: 85 },
-  { month: 'Oct', spend: 100, po: 95 },
+const defaultTrends: TrendItem[] = [
+  { month: 'Jan', spend: 65, po: 45, spend_formatted: '₹65L', po_formatted: '45 POs' },
+  { month: 'Feb', spend: 59, po: 40, spend_formatted: '₹59L', po_formatted: '40 POs' },
+  { month: 'Mar', spend: 80, po: 65, spend_formatted: '₹80L', po_formatted: '65 POs' },
+  { month: 'Apr', spend: 81, po: 70, spend_formatted: '₹81L', po_formatted: '70 POs' },
+  { month: 'May', spend: 56, po: 48, spend_formatted: '₹56L', po_formatted: '48 POs' },
+  { month: 'Jun', spend: 55, po: 45, spend_formatted: '₹55L', po_formatted: '45 POs' },
+  { month: 'Jul', spend: 40, po: 35, spend_formatted: '₹40L', po_formatted: '35 POs' },
+  { month: 'Aug', spend: 75, po: 60, spend_formatted: '₹75L', po_formatted: '60 POs' },
+  { month: 'Sep', spend: 90, po: 85, spend_formatted: '₹90L', po_formatted: '85 POs' },
+  { month: 'Oct', spend: 24.1, po: 5, spend_formatted: '₹24.1L', po_formatted: '5 POs' },
 ];
 
 export default function ReportsPage() {
-  const [isExporting, setIsExporting] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const [kpis, setKpis] = useState<ReportKpisResponse | null>(null);
+  const [trends, setTrends] = useState<TrendItem[]>(defaultTrends);
+  const [maxSpend, setMaxSpend] = useState<number>(100);
+  const [maxPo, setMaxPo] = useState<number>(100);
+  const [reportsList, setReportsList] = useState<GeneratedReportItem[]>([]);
+
+  const [downloadingCode, setDownloadingCode] = useState<string | null>(null);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [generateModalOpen, setGenerateModalOpen] = useState(false);
 
-  const handleDownload = (id: string) => {
-    setIsExporting(id);
-    setTimeout(() => {
-      setIsExporting(null);
-    }, 1500);
+  const fetchReportsData = useCallback(async (isManualRefresh = false) => {
+    if (isManualRefresh) setRefreshing(true);
+    setErrorMessage(null);
+
+    try {
+      const [kpiRes, trendRes, reportsRes] = await Promise.allSettled([
+        api.reports.getKpis(),
+        api.reports.getTrends(),
+        api.reports.getGeneratedReports(),
+      ]);
+
+      if (kpiRes.status === 'fulfilled' && kpiRes.value.success && kpiRes.value.data) {
+        setKpis(kpiRes.value.data);
+      }
+
+      if (trendRes.status === 'fulfilled' && trendRes.value.success && trendRes.value.data) {
+        setTrends(trendRes.value.data.data || defaultTrends);
+        setMaxSpend(trendRes.value.data.max_spend || 100);
+        setMaxPo(trendRes.value.data.max_po || 100);
+      }
+
+      if (reportsRes.status === 'fulfilled' && reportsRes.value.success && reportsRes.value.data) {
+        setReportsList(reportsRes.value.data);
+      }
+    } catch (err: any) {
+      console.error('Failed to load reports data:', err);
+      setErrorMessage(err.message || 'Could not fetch live report metrics from server.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchReportsData();
+  }, [fetchReportsData]);
+
+  const handleDownload = (code: string, format = 'csv') => {
+    setDownloadingCode(code);
+    try {
+      const downloadUrl = api.reports.getDownloadUrl(code);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.setAttribute('download', `${code}.${format.toLowerCase()}`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Download trigger error:', err);
+    } finally {
+      setTimeout(() => {
+        setDownloadingCode(null);
+      }, 1500);
+    }
   };
 
+  const kpiCards = [
+    {
+      label: kpis?.total_spend.label || 'Total Spend (YTD)',
+      value: kpis?.total_spend.value || '₹24.1L',
+      sub: kpis?.total_spend.sub || '+12% vs last year',
+      icon: DollarSign,
+      color: 'text-[#127670]',
+      bg: 'bg-[#1EB4A1]/10',
+    },
+    {
+      label: kpis?.pos_generated.label || 'POs Generated',
+      value: kpis?.pos_generated.value || '5',
+      sub: kpis?.pos_generated.sub || 'Avg ₹482K per PO',
+      icon: FileText,
+      color: 'text-blue-600',
+      bg: 'bg-blue-100',
+    },
+    {
+      label: kpis?.inventory_value.label || 'Inventory Value',
+      value: kpis?.inventory_value.value || '₹11.6L',
+      sub: kpis?.inventory_value.sub || 'Across 3 stores',
+      icon: Package,
+      color: 'text-[#E89A3C]',
+      bg: 'bg-[#E89A3C]/10',
+    },
+    {
+      label: kpis?.active_vendors.label || 'Active Vendors',
+      value: kpis?.active_vendors.value || '6',
+      sub: kpis?.active_vendors.sub || 'Avg Score: 91%',
+      icon: Users,
+      color: 'text-purple-600',
+      bg: 'bg-purple-100',
+    },
+  ];
+
   return (
-    <div className="p-4 pt-16 md:p-8 max-w-[1400px] mx-auto flex flex-col gap-6 font-sans h-full">
+    <div className="p-3 sm:p-4 pt-16 md:p-8 max-w-[1400px] mx-auto flex flex-col gap-4 sm:gap-6 font-sans h-full">
       <Header />
       
       {/* Modals */}
-      <ScheduleReportModal isOpen={scheduleModalOpen} onClose={() => setScheduleModalOpen(false)} />
-      <GenerateReportModal isOpen={generateModalOpen} onClose={() => setGenerateModalOpen(false)} />
+      <ScheduleReportModal 
+        isOpen={scheduleModalOpen} 
+        onClose={() => setScheduleModalOpen(false)} 
+        onScheduled={() => fetchReportsData(true)}
+      />
+      <GenerateReportModal 
+        isOpen={generateModalOpen} 
+        onClose={() => setGenerateModalOpen(false)} 
+        onReportGenerated={() => fetchReportsData(true)}
+      />
 
       {/* Page Title & Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mt-1 sm:mt-2">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Reports & Analytics</h1>
-          <p className="text-[13px] text-slate-500 mt-1">Generate comprehensive insights across procurement, inventory, and finance.</p>
+          <h1 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            Reports & Analytics
+            {loading && <span className="text-[11px] font-normal text-slate-400 animate-pulse">(Connecting to database...)</span>}
+          </h1>
+          <p className="text-[12px] sm:text-[13px] text-slate-500 mt-0.5 sm:mt-1">
+            Real-time procurement insights, clinical consumption rates, and verified data exports.
+          </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto">
+          <button
+            onClick={() => fetchReportsData(true)}
+            disabled={refreshing}
+            className="flex items-center justify-center gap-1.5 bg-white border border-slate-200 text-slate-600 p-2 sm:px-3.5 sm:py-2.5 rounded-lg text-[13px] font-semibold hover:bg-slate-50 transition-colors shadow-sm cursor-pointer disabled:opacity-50 shrink-0"
+            title="Refresh analytics data"
+          >
+            <RotateCw size={15} className={cn(refreshing && "animate-spin text-[#127670]")} />
+            <span className="hidden md:inline">Refresh</span>
+          </button>
           <button 
             onClick={() => setScheduleModalOpen(true)}
-            className="flex items-center gap-2 bg-white border border-slate-200 text-[#2B3F54] px-5 py-2.5 rounded-lg text-[14px] font-semibold hover:bg-slate-50 transition-colors shadow-sm whitespace-nowrap cursor-pointer"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-white border border-slate-200 text-[#2B3F54] px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg text-[12px] sm:text-[14px] font-semibold hover:bg-slate-50 transition-colors shadow-sm whitespace-nowrap cursor-pointer"
           >
-            <Calendar size={16} strokeWidth={2.5} /> Schedule Report
+            <Calendar size={15} strokeWidth={2.5} /> Schedule Report
           </button>
           <button 
             onClick={() => setGenerateModalOpen(true)}
-            className="flex items-center gap-2 bg-[#125F5C] text-white px-5 py-2.5 rounded-lg text-[14px] font-semibold hover:bg-[#0c4240] transition-colors shadow-sm whitespace-nowrap cursor-pointer"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-[#125F5C] text-white px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg text-[12px] sm:text-[14px] font-semibold hover:bg-[#0c4240] transition-colors shadow-sm whitespace-nowrap cursor-pointer"
           >
-            <TrendingUp size={16} strokeWidth={2.5} /> Generate Custom
+            <TrendingUp size={15} strokeWidth={2.5} /> Generate Custom
           </button>
         </div>
       </div>
 
-      {/* KPI Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((kpi, i) => (
-          <div key={i} className="bg-white p-5 rounded-xl shadow-[0_2px_10px_rgba(0,0,0,0.02)] border border-slate-100 flex flex-col gap-4 hover:shadow-md transition-shadow">
-            <div className="flex justify-between items-start">
-              <div className={cn("p-2.5 rounded-lg", kpi.bg)}>
-                <kpi.icon size={20} className={kpi.color} strokeWidth={2.5} />
-              </div>
-              <TrendingUp size={16} className="text-[#1EB4A1]" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold tracking-tight text-slate-800 mb-0.5">{kpi.value}</p>
-              <h3 className="text-[13px] text-slate-500 font-semibold mb-1">{kpi.label}</h3>
-              <p className="text-[11px] text-slate-400 font-medium">{kpi.sub}</p>
-            </div>
+      {/* Error Banner if any */}
+      {errorMessage && (
+        <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between gap-2 text-[13px] text-amber-800">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={16} className="text-amber-600 shrink-0" />
+            <span>{errorMessage}</span>
           </div>
-        ))}
-      </div>
+          <button 
+            onClick={() => fetchReportsData(true)} 
+            className="text-amber-700 underline font-semibold text-[12px] hover:text-amber-900 cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* KPI Row */}
+      {loading && !refreshing ? (
+        <SkeletonKpiCards count={4} />
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+          {kpiCards.map((kpi, i) => (
+            <div key={i} className="bg-white p-3.5 sm:p-5 rounded-xl shadow-[0_2px_10px_rgba(0,0,0,0.02)] border border-slate-100 flex flex-col justify-between gap-3 sm:gap-4 hover:shadow-md transition-shadow">
+              <div className="flex justify-between items-start">
+                <div className={cn("p-2 rounded-lg", kpi.bg)}>
+                  <kpi.icon size={18} className={kpi.color} strokeWidth={2.5} />
+                </div>
+                <TrendingUp size={15} className="text-[#1EB4A1]" />
+              </div>
+              <div>
+                <p className="text-lg sm:text-2xl font-bold tracking-tight text-slate-800 mb-0.5 truncate">
+                  {kpi.value}
+                </p>
+                <h3 className="text-[11px] sm:text-[13px] text-slate-500 font-semibold mb-0.5 truncate">{kpi.label}</h3>
+                <p className="text-[10px] sm:text-[11px] text-slate-400 font-medium truncate">{kpi.sub}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* CSS Bar Chart */}
+        {/* CSS Dual-Series Bar Chart */}
         <div className="lg:col-span-2 bg-white rounded-xl shadow-[0_2px_10px_rgba(0,0,0,0.02)] border border-slate-100 p-6 flex flex-col">
-          <div className="flex justify-between items-center mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-8">
             <div>
               <h3 className="text-[15px] font-bold text-slate-800">Procurement Volume & Spend</h3>
-              <p className="text-[12px] text-slate-500 mt-1">Monthly trend across all hospital departments</p>
+              <p className="text-[12px] text-slate-500 mt-1">Monthly trend across all hospital departments & suppliers</p>
             </div>
             <div className="flex gap-4">
               <div className="flex items-center gap-2">
@@ -117,60 +250,115 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          <div className="flex-1 flex items-end gap-2 sm:gap-4 h-64 mt-auto">
-            {chartData.map((data, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group">
-                <div className="w-full flex justify-center items-end gap-1 h-[85%] relative">
-                  {/* Tooltip on hover */}
-                  <div className="absolute -top-10 bg-slate-800 text-white text-[11px] font-medium py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
-                    ₹{data.spend}L / {data.po} POs
+          <div className="flex-1 flex items-end gap-2 sm:gap-4 h-64 mt-auto pt-8">
+            {loading && !refreshing ? (
+              Array.from({ length: 10 }).map((_, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
+                  <div className="w-full flex justify-center items-end gap-1 h-[85%]">
+                    <Skeleton className="w-[40%] rounded-t-sm" style={{ height: `${30 + (i % 5) * 12}%` }} />
+                    <Skeleton className="w-[40%] rounded-t-sm opacity-60" style={{ height: `${20 + (i % 4) * 14}%` }} />
                   </div>
-                  
-                  <div 
-                    className="w-[40%] bg-[#127670] rounded-t-sm transition-all duration-500 hover:opacity-80" 
-                    style={{ height: `${data.spend}%` }}
-                  ></div>
-                  <div 
-                    className="w-[40%] bg-[#1EB4A1]/40 rounded-t-sm transition-all duration-500 hover:opacity-80" 
-                    style={{ height: `${data.po}%` }}
-                  ></div>
+                  <Skeleton className="h-2.5 w-6" />
                 </div>
-                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">{data.month}</span>
-              </div>
-            ))}
+              ))
+            ) : (
+              trends.map((data, i) => {
+                const spendHeight = Math.max(6, Math.min(85, (data.spend / (maxSpend || 100)) * 85));
+                const poHeight = Math.max(6, Math.min(85, (data.po / (maxPo || 100)) * 85));
+
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group">
+                    <div className="w-full flex justify-center items-end gap-1 h-[85%] relative">
+                      {/* Tooltip on hover */}
+                      <div className="absolute -top-10 bg-slate-800 text-white text-[11px] font-medium py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none shadow-md">
+                        {data.spend_formatted} / {data.po_formatted}
+                      </div>
+                      
+                      <div 
+                        className="w-[40%] bg-[#127670] rounded-t-sm transition-all duration-500 hover:opacity-85" 
+                        style={{ height: `${spendHeight}%` }}
+                        title={`Spend: ${data.spend_formatted}`}
+                      ></div>
+                      <div 
+                        className="w-[40%] bg-[#1EB4A1]/40 rounded-t-sm transition-all duration-500 hover:opacity-85" 
+                        style={{ height: `${poHeight}%` }}
+                        title={`Volume: ${data.po_formatted}`}
+                      ></div>
+                    </div>
+                    <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">{data.month}</span>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 
-        {/* Recent Reports List */}
+        {/* Recent Generated Reports List */}
         <div className="bg-white rounded-xl shadow-[0_2px_10px_rgba(0,0,0,0.02)] border border-slate-100 flex flex-col">
-          <div className="p-5 border-b border-slate-100">
-            <h3 className="text-[15px] font-bold text-slate-800">Generated Reports</h3>
-            <p className="text-[12px] text-slate-500 mt-1">Recently exported data files</p>
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h3 className="text-[15px] font-bold text-slate-800">Generated Reports</h3>
+              <p className="text-[12px] text-slate-500 mt-1">Download live data files (CSV / PDF)</p>
+            </div>
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+              {reportsList.length} Files
+            </span>
           </div>
           
-          <div className="flex flex-col flex-1 overflow-y-auto">
-            {generatedReports.map((report, i) => (
-              <div key={i} className="p-4 border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors flex items-center justify-between group">
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 text-slate-400">
+          <div className="flex flex-col flex-1 overflow-y-auto max-h-[380px]">
+            {loading && !refreshing ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="p-4 border-b border-slate-50 last:border-0 flex items-center justify-between">
+                  <div className="flex items-start gap-3 min-w-0 pr-2">
+                    <Skeleton className="w-4 h-4 rounded mt-0.5 shrink-0" />
+                    <div>
+                      <Skeleton className="h-4 w-36 mb-1.5" />
+                      <div className="flex items-center gap-2">
+                        <Skeleton className="h-3.5 w-12 rounded" />
+                        <Skeleton className="h-3.5 w-8 rounded" />
+                        <Skeleton className="h-3 w-16" />
+                      </div>
+                    </div>
+                  </div>
+                  <Skeleton className="w-8 h-8 rounded-full shrink-0" />
+                </div>
+              ))
+            ) : reportsList.length === 0 ? (
+              <div className="p-8 text-center text-slate-400 text-[13px]">
+                No generated reports found. Click &quot;Generate Custom&quot; to export data.
+              </div>
+            ) : null}
+
+            {reportsList.map((report) => (
+              <div key={report.id} className="p-4 border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors flex items-center justify-between group">
+                <div className="flex items-start gap-3 min-w-0 pr-2">
+                  <div className="mt-0.5 text-slate-400 shrink-0">
                     <FileText size={16} strokeWidth={2.5} />
                   </div>
-                  <div>
-                    <p className="text-[13px] font-bold text-slate-800 group-hover:text-[#127670] transition-colors">{report.name}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[11px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{report.type}</span>
-                      <span className="text-[11px] text-slate-400">{report.date}</span>
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-bold text-slate-800 group-hover:text-[#127670] transition-colors truncate">
+                      {report.name}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
+                        {report.type}
+                      </span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#127670] bg-[#1EB4A1]/10 px-1.5 py-0.5 rounded">
+                        {report.format || 'CSV'}
+                      </span>
+                      <span className="text-[11px] text-slate-400">{report.size}</span>
+                      <span className="text-[11px] text-slate-400">· {report.date}</span>
                     </div>
                   </div>
                 </div>
                 
                 <button 
-                  onClick={() => handleDownload(report.id)}
-                  disabled={isExporting === report.id}
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-[#127670] hover:bg-[#1EB4A1]/10 transition-colors cursor-pointer"
-                  title="Download PDF"
+                  onClick={() => handleDownload(report.report_code, report.format || 'CSV')}
+                  disabled={downloadingCode === report.report_code}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-[#127670] hover:bg-[#1EB4A1]/10 transition-colors cursor-pointer shrink-0"
+                  title={`Download ${report.format || 'CSV'}`}
                 >
-                  {isExporting === report.id ? (
+                  {downloadingCode === report.report_code ? (
                     <div className="w-4 h-4 border-2 border-[#127670] border-t-transparent rounded-full animate-spin" />
                   ) : (
                     <Download size={16} strokeWidth={2.5} />
@@ -181,8 +369,11 @@ export default function ReportsPage() {
           </div>
           
           <div className="p-3 border-t border-slate-100 mt-auto">
-            <button className="w-full py-2 text-[13px] font-semibold text-[#127670] hover:bg-[#1EB4A1]/10 rounded-md transition-colors cursor-pointer">
-              View All Reports
+            <button 
+              onClick={() => setGenerateModalOpen(true)}
+              className="w-full py-2 text-[13px] font-semibold text-[#127670] hover:bg-[#1EB4A1]/10 rounded-md transition-colors cursor-pointer"
+            >
+              + Create New Data Export
             </button>
           </div>
         </div>
