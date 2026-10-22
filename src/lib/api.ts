@@ -2,7 +2,7 @@ export function getApiBaseUrl(): string {
   if (typeof window !== 'undefined') {
     const { hostname } = window.location;
     if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1' && !process.env.NEXT_PUBLIC_API_URL?.includes(hostname)) {
-      return `http://${hostname}:5001/api/v1`;
+      return `https://${hostname}/api/v1`;
     }
   }
   return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
