@@ -1,14 +1,18 @@
 export function getApiBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
   if (typeof window !== 'undefined') {
     const { hostname } = window.location;
-    if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1' && !process.env.NEXT_PUBLIC_API_URL?.includes(hostname)) {
-      return `https://${hostname}/api/v1`;
+    if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      // In production on Vercel, always route to the live backend API
+      return 'https://hospital-vendor-backend.vercel.app/api/v1';
     }
   }
-  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
+  return 'http://localhost:5001/api/v1';
 }
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
+export const API_BASE_URL = getApiBaseUrl();
 
 export const AUTH_TOKEN_KEY = 'hospital_crm_token';
 export const AUTH_USER_KEY = 'hospital_crm_auth_user';
@@ -233,7 +237,7 @@ export const api = {
       });
     },
     getDownloadUrl(reportCode: string) {
-      return `${API_BASE_URL}/reports/download/${reportCode}`;
+      return `${getApiBaseUrl()}/reports/download/${reportCode}`;
     },
   },
 
